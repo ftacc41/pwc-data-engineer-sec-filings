@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+typesense
+pandas
+sqlmodel
+PyPDF2
+pydantic

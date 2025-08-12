@@ -1,0 +1,8 @@
+flowchart LR
+  subgraph GOLD[Gold - Warehouse]
+    Fact[Fact_Financials] --- CompanyDim
+    Fact --- FilingDim
+    Fact --- PeriodDim
+    Fact --- MetricDim
+    Fact --- CalendarDim
+  end

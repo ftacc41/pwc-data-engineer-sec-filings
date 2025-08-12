@@ -1,0 +1,6 @@
+flowchart LR
+  subgraph BRONZE[Bronze - Raw]
+    A[CSV files] --> B[bronze_parquet_folder]
+    C[PDF filings] --> B
+    D[JSON metadata] --> B
+  end

@@ -1,0 +1,9 @@
+flowchart LR
+  subgraph SILVER[Silver - Refined]
+    B --> CompanyDim[company_dim]
+    B --> FilingDim[filing_dim]
+    B --> PeriodDim[period_dim]
+    B --> MetricDim[metric_dim]
+    B --> Calendar[calendar_dim]
+    B --> FactStaging[fact_staging]
+  end

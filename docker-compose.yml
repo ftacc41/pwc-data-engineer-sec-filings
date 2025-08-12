@@ -1,0 +1,27 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app  # mounts your whole project
+    environment:
+      - TYPESENSE_API_KEY=xyz
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  typesense:
+    image: typesense/typesense:0.24.1
+    container_name: typesense
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense-data:/data
+    environment:
+      TYPESENSE_DATA_DIR: /data
+      TYPESENSE_API_KEY: xyz
+
+volumes:
+  typesense-data:
