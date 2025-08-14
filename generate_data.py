@@ -16,6 +16,7 @@ def generate_sample_data():
             "cik": [1000180, 1000180, 1000200],
             "name": ["Tesla Inc.", "Tesla Inc.", "Google Inc."],
             "form": ["10-Q", "10-K", "10-Q"],
+            "sic": [3711, 3711, 7372],
         }
     )
 
