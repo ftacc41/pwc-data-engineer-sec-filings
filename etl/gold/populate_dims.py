@@ -2,78 +2,98 @@ import pandas as pd
 import pathlib
 from sqlmodel import Session, select
 from data_access.db import engine
-from data_access.models import CompanyDim, FilingDim
+from data_access.models import CompanyDim, FilingDim, TagDim, DateDim
 
 # Define the paths to the Silver layer Parquet files
 SILVER_DIR = pathlib.Path('data/silver/financials')
 SUB_PARQUET_FILE = SILVER_DIR / 'sub.parquet'
+TAG_PARQUET_FILE = SILVER_DIR / 'tag.parquet'
+PRE_PARQUET_FILE = SILVER_DIR / 'pre.parquet'
+NUM_PARQUET_FILE = SILVER_DIR / 'num.parquet' # Using NUM to get date data
 
-def populate_company_and_filing_dims():
+def populate_all_dims():
     """
-    Reads the SUB.parquet file and populates the CompanyDim and FilingDim tables.
+    Reads the Silver layer Parquet files and populates all dimension tables.
     """
     if not SUB_PARQUET_FILE.exists():
-        print(f"Error: {SUB_PARQUET_FILE} not found. Please run the Silver ETL script first.")
+        print(f"Error: {SUB_PARQUET_FILE} not found. Please run the data generation script first.")
         return
 
-    # 1. Read the clean Silver layer data
+    # --- Read all necessary dataframes once ---
     sub_df = pd.read_parquet(SUB_PARQUET_FILE)
-    print(f"Read {len(sub_df)} records from {SUB_PARQUET_FILE}")
-
-    #clean CIK data
-    sub_df['cik'] = sub_df['cik'].astype(str).str.strip()
-
+    tag_df = pd.read_parquet(TAG_PARQUET_FILE)
+    pre_df = pd.read_parquet(PRE_PARQUET_FILE)
+    num_df = pd.read_parquet(NUM_PARQUET_FILE)
+    
     with Session(engine) as session:
         # --- Populate CompanyDim ---
         print("Populating CompanyDim...")
         # Deduplicate companies by their CIK
         companies_df = sub_df.drop_duplicates(subset=['cik']).copy()
         
-        # Create a list of CompanyDim objects
         companies_to_add = []
         for _, row in companies_df.iterrows():
             company = CompanyDim(
-                cik=row['cik'],
+                cik=str(row['cik']), # <-- CIK is now explicitly a string here
                 name=row['name'],
-                sic=row['sic'],
-                country_of_incorporation=row['countryinc'],
-                country_of_business=row['countryba']
+                sic=None,
+                country_of_incorporation=None,
+                country_of_business=None
             )
             companies_to_add.append(company)
         
-        # Add new companies to the session
         session.add_all(companies_to_add)
         session.commit()
         print(f"Successfully added {len(companies_to_add)} unique companies to CompanyDim.")
 
         # --- Populate FilingDim ---
         print("Populating FilingDim...")
-        
-        # Get the newly created CompanyDim records to create a lookup map
         companies_in_db = session.exec(select(CompanyDim)).all()
         cik_to_company_id = {c.cik: c.id for c in companies_in_db}
 
-        # Create a list of FilingDim objects
         filings_to_add = []
         for _, row in sub_df.iterrows():
-            company_id = cik_to_company_id.get(row['cik'])
+            # Correcting the lookup by converting the CIK from the DataFrame to a string
+            company_id = cik_to_company_id.get(str(row['cik']))
             if company_id:
                 filing = FilingDim(
                     accession_number=row['adsh'],
                     form_type=row['form'],
-                    period_of_report=row['period'],
-                    date_filed=row['filed'],
-                    company_id=company_id  # Foreign key link!
+                    period_of_report=None,
+                    date_filed=None,
+                    company_id=company_id
                 )
                 filings_to_add.append(filing)
-        
-        # Add all filings to the session
         session.add_all(filings_to_add)
         session.commit()
         print(f"Successfully added {len(filings_to_add)} filings to FilingDim.")
 
-    print("Populating CompanyDim and FilingDim complete.")
+        # --- Populate TagDim ---
+        print("Populating TagDim...")
+        tags_to_add = []
+        for _, row in tag_df.iterrows():
+            tag = TagDim(
+                tag=row['tag'],
+                version=row['version'],
+                custom=row['custom'],
+                label=row['label']
+            )
+            tags_to_add.append(tag)
+        session.add_all(tags_to_add)
+        session.commit()
+        print(f"Successfully added {len(tags_to_add)} unique tags to TagDim.")
+        
+        # --- Populate DateDim ---
+        print("Populating DateDim...")
+        unique_dates = num_df['ddate'].unique()
+        dates_to_add = []
+        for date_str in unique_dates:
+            dates_to_add.append(DateDim(date_key=str(date_str)))
+        session.add_all(dates_to_add)
+        session.commit()
+        print(f"Successfully added {len(dates_to_add)} unique dates to DateDim.")
+
+    print("Populating all dimensions complete.")
 
 if __name__ == '__main__':
-    # Make sure to run this script from the project root
-    populate_company_and_filing_dims()
+    populate_all_dims()

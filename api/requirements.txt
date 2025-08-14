@@ -5,3 +5,5 @@ pandas
 sqlmodel
 PyPDF2
 pydantic
+pyarrow
+sdv
