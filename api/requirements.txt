@@ -1,11 +1,21 @@
+# --- API & Server ---
 fastapi
 uvicorn[standard]
+
+# --- Vector DB & Search ---
 typesense
-pandas
-sqlmodel
-PyPDF2
-pydantic
-pyarrow
-sdv
 sentence-transformers
-chromadb
+
+# --- Data Access & ORM ---
+sqlmodel
+pydantic
+
+# --- ETL & Data Handling ---
+pandas
+pyarrow
+PyPDF2  # For READING PDFs in the ETL step
+
+# --- Data Generation ---
+sdv
+faker
+fpdf2   # For WRITING PDFs
