@@ -20,3 +20,7 @@ data/
 # Files created by IDEs like PyCharm or operating systems like macOS
 .idea/
 .DS_Store
+
+# Downloaded models and caches
+.cache/
+.chroma/

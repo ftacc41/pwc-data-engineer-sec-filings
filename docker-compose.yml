@@ -10,8 +10,6 @@ services:
       - .:/app
     environment:
       - TYPESENSE_API_KEY=xyz
-      - CHROMA_SERVER_HOST=chroma_db
-      - CHROMA_SERVER_PORT=8000
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
   typesense:
@@ -24,12 +22,8 @@ services:
     environment:
       TYPESENSE_DATA_DIR: /data
       TYPESENSE_API_KEY: xyz
-
-  chroma_db:
-    image: chromadb/chroma
-    container_name: chroma_sec_filings
-    ports:
-      - "8001:8000"
+      # This is the core configuration to enable vector search
+      TYPESENSE_EXPERIMENTAL_FORCE_VECTOR_SEARCH_SUPPORT: "true"
 
 volumes:
   typesense-data:
