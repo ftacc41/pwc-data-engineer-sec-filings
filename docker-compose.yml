@@ -9,7 +9,9 @@ services:
     volumes:
       - .:/app
     environment:
-      - TYPESENSE_API_KEY=xyz
+      TYPESENSE_API_KEY: xyz
+      API_USERNAME: admin
+      API_PASSWORD: supersecret
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
   typesense:
@@ -22,7 +24,6 @@ services:
     environment:
       TYPESENSE_DATA_DIR: /data
       TYPESENSE_API_KEY: xyz
-      # This is the core configuration to enable vector search
       TYPESENSE_EXPERIMENTAL_FORCE_VECTOR_SEARCH_SUPPORT: "true"
 
 volumes:
