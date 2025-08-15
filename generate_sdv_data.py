@@ -8,71 +8,79 @@ import shutil
 import sys
 import traceback
 
-def generate_comprehensive_data(num_filings=50):
-    """
-    Generates comprehensive, synthetic structured and unstructured data for the project.
-    - Uses SDV to create relational tabular data based on a sample.
-    - Uses Faker to generate rich text summaries.
-    - Uses FPDF2 to create corresponding PDF files for unstructured data processing.
-    """
+def generate_comprehensive_data(num_filings=200):
     print("--- Starting comprehensive data generation script ---")
-
     try:
-        # --- 0. Set Up Robust Paths ---
+        # --- 0. Set Up Paths ---
         SCRIPT_DIR = Path(__file__).resolve().parent
         BRONZE_DIR = SCRIPT_DIR / "data" / "bronze"
         STRUCTURED_DIR = BRONZE_DIR / "structured_filings"
         UNSTRUCTURED_DIR = BRONZE_DIR / "unstructured_filings_pdf"
-        
         print(f"Step 0: Target data directory set to: {BRONZE_DIR}")
 
         # --- 1. Define the REAL data to train the SDV model ---
+        print("Step 1: Defining a larger, more varied sample data set...")
         fake = Faker()
-        sub_real = pd.DataFrame({
-            "adsh": ["0000000001-19-000001", "0000000002-19-000002", "0000000003-19-000003"],
-            "cik": [1000180, 1000180, 1000200],
-            "name": ["Innovation Corp", "Innovation Corp", "Data Dynamics Inc"],
-            "form": ["10-Q", "10-K", "10-Q"],
-            "sic": [3711, 3711, 7372],
-            "filing_summary": [fake.text(max_nb_chars=1000) for _ in range(3)]
-        })
+        sub_real_data = []
+        for i in range(10):
+            is_corp = fake.boolean()
+            company_name = fake.company() + (" Inc" if is_corp else " LLC")
+            cik = fake.unique.random_number(digits=7, fix_len=True)
+            for _ in range(fake.random.randint(1, 3)):
+                adsh = f"{fake.random_number(digits=10, fix_len=True)}-{fake.random_number(digits=2, fix_len=True)}-{fake.random_number(digits=6, fix_len=True)}"
+                form_type = fake.random.choice(['10-K', '10-Q', '8-K'])
+                sub_real_data.append({
+                    "adsh": adsh, "cik": cik, "name": company_name,
+                    "form": form_type, "sic": fake.random_number(digits=4, fix_len=True),
+                    "filing_summary": fake.paragraph(nb_sentences=10)
+                })
+        sub_real = pd.DataFrame(sub_real_data)
         tag_real = pd.DataFrame({
-            "tag_id": [1, 2, 3], "tag": ["Revenues", "NetIncomeLoss", "Assets"],
-            "version": ["us-gaap/2023"] * 3, "custom": [0, 0, 0],
-            "label": ["Revenues", "Net Income (Loss)", "Assets"],
+            "tag_id": [1, 2, 3, 4, 5, 6],
+            "tag": ["Revenues", "NetIncomeLoss", "Assets", "Liabilities", "OperatingExpenses", "Cash"],
+            "version": ["us-gaap/2023"] * 6, "custom": [0] * 6,
+            "label": ["Revenues", "Net Income (Loss)", "Assets", "Liabilities", "Operating Expenses", "Cash and Cash Equivalents"],
         })
-        pre_real = pd.DataFrame({
-            "pre_id": [101, 102, 103],
-            "adsh": ["0000000001-19-000001", "0000000002-19-000002", "0000000003-19-000003"],
-            "stmt": ["IS", "BS", "IS"], "tag_id": [1, 3, 2],
-        })
-        num_real = pd.DataFrame({
-            "adsh": ["0000000001-19-000001", "0000000002-19-000002", "0000000003-19-000003"],
-            "tag_id": [1, 3, 2], "version": ["us-gaap/2023"] * 3,
-            "ddate": [20230331, 20231231, 20230930], "qtrs": [1, 4, 3],
-            "value": [2.5e10, 7.5e10, 1.5e10],
-        })
+        pre_real_data = []
+        all_adsh = sub_real['adsh'].tolist()
+        for adsh in all_adsh:
+            stmt = fake.random.choice(['IS', 'BS', 'CF'])
+            num_tags = fake.random.randint(1, 4)
+            for tag_id in fake.random.sample(tag_real['tag_id'].tolist(), k=num_tags):
+                pre_real_data.append({
+                    "pre_id": fake.unique.random_number(digits=5, fix_len=True),
+                    "adsh": adsh, "stmt": stmt, "tag_id": tag_id,
+                })
+        pre_real = pd.DataFrame(pre_real_data)
+
+        # --- FIX PART 1: Add a unique ID to the num_real table ---
+        num_real_data = []
+        num_id_counter = 0
+        for _, row in pre_real.iterrows():
+            num_real_data.append({
+                "num_id": num_id_counter, # This is the new ID column
+                "adsh": row['adsh'], "tag_id": row['tag_id'], "version": "us-gaap/2023",
+                "ddate": int(fake.date_between(start_date='-2y', end_date='today').strftime('%Y%m%d')),
+                "qtrs": fake.random.randint(1, 4), "value": fake.random_int(min=100000, max=999999999),
+            })
+            num_id_counter += 1
+        num_real = pd.DataFrame(num_real_data)
+
         real_data = {'sub': sub_real, 'tag': tag_real, 'pre': pre_real, 'num': num_real}
-        print("Step 1: In-memory sample data defined.")
+        print(f"✓ Defined sample data with {len(sub_real)} filings.")
 
         # --- 2. Define the Metadata for SDV ---
         metadata = MultiTableMetadata()
         metadata.detect_from_dataframes(data=real_data)
+        metadata.update_column(table_name='sub', column_name='filing_summary', sdtype='text')
         metadata.update_column(
-            table_name='sub',
-            column_name='filing_summary',
-            sdtype='text'
+            table_name='num', column_name='ddate', sdtype='datetime', datetime_format='%Y%m%d'
         )
-
-        # This is the crucial fix to ensure only valid dates are generated
-        metadata.update_column(
-            table_name='num',
-            column_name='ddate',
-            sdtype='datetime',
-            datetime_format='%Y%m%d'
-        )
-        
         metadata.set_primary_key(table_name='tag', column_name='tag_id')
+
+        # --- FIX PART 2: Explicitly tell SDV the primary key for 'num' ---
+        metadata.set_primary_key(table_name='num', column_name='num_id')
+        
         print("Step 2: SDV metadata configured.")
         
         # --- 3. Train the SDV Synthesizer ---
@@ -81,29 +89,20 @@ def generate_comprehensive_data(num_filings=50):
         synthesizer.fit(real_data)
         print("✓ Synthesizer trained successfully.")
 
-        # --- 4. Generate Synthetic Data ---
+        # ... (rest of the script is unchanged) ...
         print(f"Step 4: Generating synthetic data for {num_filings} new filings...")
-        # This uses the corrected syntax for your version of SDV
         synthetic_data = synthesizer.sample(num_filings)
         print(f"✓ Generated {len(synthetic_data['sub'])} parent records and related child data.")
-
-        # --- 5. Save the Data ---
         print("Step 5: Preparing to save data to the file system...")
         if BRONZE_DIR.exists():
             print(f"  - Found existing directory, removing: {BRONZE_DIR}")
             shutil.rmtree(BRONZE_DIR)
-        
-        print(f"  - Creating structured data directory: {STRUCTURED_DIR}")
         STRUCTURED_DIR.mkdir(parents=True, exist_ok=True)
-        
-        print(f"  - Creating unstructured data directory: {UNSTRUCTURED_DIR}")
         UNSTRUCTURED_DIR.mkdir(parents=True, exist_ok=True)
-        
         print("  - Saving structured data as CSVs...")
         for table_name, df in synthetic_data.items():
             df.to_csv(STRUCTURED_DIR / f"{table_name}.csv", index=False)
         print(f"  ✓ Structured data saved to {STRUCTURED_DIR}")
-        
         print("  - Generating and saving corresponding PDF files...")
         total_pdfs = len(synthetic_data['sub'])
         for i, (_, row) in enumerate(synthetic_data['sub'].iterrows()):
@@ -116,18 +115,13 @@ def generate_comprehensive_data(num_filings=50):
             pdf.set_font("Arial", size=12)
             pdf.write(5, filing_text)
             pdf.output(UNSTRUCTURED_DIR / f"{adsh}.pdf")
-            if (i + 1) % 10 == 0 or (i + 1) == total_pdfs:
-                print(f"    - Generated {i + 1}/{total_pdfs} PDFs")
-        print(f"  ✓ PDF reports saved to {UNSTRUCTURED_DIR}")
-
+        print(f"  ✓ Generated {total_pdfs} PDF reports and saved to {UNSTRUCTURED_DIR}")
         print("\n--- ✅ SUCCESS ---")
         print("Comprehensive data generation complete.")
-        print(f"Data is located in: {BRONZE_DIR}")
-
     except Exception as e:
         print("\n--- ❌ ERROR ---", file=sys.stderr)
         print(f"An unexpected error occurred: {e}", file=sys.stderr)
         traceback.print_exc()
 
 if __name__ == "__main__":
-    generate_comprehensive_data(num_filings=50)
+    generate_comprehensive_data(num_filings=200)

@@ -9,7 +9,6 @@ import sys
 import traceback
 
 def main():
-    # ... (the entire main function from before, no changes inside it) ...
     print("--- Starting Silver to Gold ETL Process ---")
 
     # --- 1. Set Up Paths & Load Silver Data ---
@@ -44,9 +43,12 @@ def main():
         session.add_all(tag_records)
         print(f"  - Staged {len(tag_records)} records for TagDim")
 
-        date_df = dfs['num'][['ddate']].drop_duplicates()
-        date_df['date_key'] = date_df['ddate'].dt.strftime('%Y%m%d')
-        date_records = [DateDim(date_key=d) for d in date_df['date_key']]
+        # First, convert all datetimes to date strings
+        date_key_series = dfs['num']['ddate'].dt.strftime('%Y%m%d')
+        # THEN, find the unique date strings
+        unique_date_keys = date_key_series.drop_duplicates().tolist()
+
+        date_records = [DateDim(date_key=key) for key in unique_date_keys]
         session.add_all(date_records)
         print(f"  - Staged {len(date_records)} records for DateDim")
         
@@ -76,6 +78,7 @@ def main():
         facts = facts.merge(dfs['tag'][['tag_id', 'tag']], on='tag_id')
 
         facts['date_key'] = facts['ddate'].dt.strftime('%Y%m%d')
+        facts['cik'] = facts['cik'].astype(str)
         facts = facts.merge(company_map.rename(columns={'id': 'company_id'}), on='cik')
         facts = facts.merge(filing_map.rename(columns={'id': 'filing_id', 'accession_number': 'adsh'}), on='adsh')
         facts = facts.merge(tag_map.rename(columns={'id': 'tag_id_fk', 'tag_id':'tag_id_orig'}), left_on='tag', right_on='tag')
