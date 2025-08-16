@@ -75,6 +75,7 @@ def main():
         data_df['full_text'] = data_df['filing_summary'] + "\n\n" + data_df['extracted_pdf_text']
         print(f"✓ Loaded and prepared {len(data_df)} documents.")
 
+    
         # --- 4. Generate Vector Embeddings ---
         print("\nStep 4: Generating vector embeddings for documents...")
         embeddings = model.encode(data_df['full_text'].tolist(), show_progress_bar=True)
