@@ -1,7 +1,6 @@
 Hi Technical Reviewer/s
-My name is Franco Tacchella and this is my completed techincal challenge. I want to first state that this was a robust project and in my opinion not the best way to evaluate a candidate as the most important thing in data engineering is probably a deep understanding of the information relevant users need. 
-As a suggestion, giving candidates a data set and seeing how the build schemas and tables is probably a better aproach. 
-If you read this I thank you and you will now find the documentation of my project. I really hope I am considered for this position.
+My name is Franco Tacchella and this is my completed techincal challenge.
+You will now find the documentation of my project. I really hope I am considered for this position.
 
 
 # SEC Filings Data Engineering & Search API
