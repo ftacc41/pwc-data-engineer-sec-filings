@@ -1,6 +1,7 @@
+import os
 from typing import List, Optional
 import secrets
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Security, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Security, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlmodel import Session
 
@@ -8,8 +9,7 @@ from api.api_schemas import (
     SearchResponse, CompanyTotalsResponse, SubMission, SubMissionCreate, SubMissionUpdate
 )
 from data_access.db import engine
-from api import services
-import os
+from api import services, config
 
 # --- INITIALIZATION ---
 app = FastAPI(
@@ -25,9 +25,6 @@ def get_db_session():
         yield session
 
 def check_auth(credentials: HTTPBasicCredentials = Security(security)):
-    # Logic is now in the service layer, but we keep the dependency here for FastAPI integration
-    # A more advanced refactor could move this, but this is clear and effective.
-    # We will just reuse the code here for simplicity as it's not complex business logic.
     correct_username = os.environ.get('API_USERNAME', 'admin')
     correct_password = os.environ.get('API_PASSWORD', 'supersecret')
     is_user_ok = secrets.compare_digest(credentials.username.encode("utf8"), correct_username.encode("utf8"))
@@ -48,9 +45,14 @@ def read_root(username: str = Depends(check_auth)):
     return {"message": f"Welcome, {username}! The SEC Filings API is running."}
 
 @main_router.get("/search", response_model=SearchResponse, tags=["Search"])
-def vector_search(q: str, form_type: Optional[str] = None, k: int = 10, username: str = Depends(check_auth)):
+def vector_search(
+    query: str = Query(..., alias="q", title="Search Query", description="The semantic search query to find relevant filings."),
+    form_type: Optional[str] = None,
+    k: int = 10, 
+    username: str = Depends(check_auth)
+):
     try:
-        results = services.perform_vector_search(q=q, form_type=form_type, k=k)
+        results = services.perform_vector_search(q=query, form_type=form_type, k=k)
         return SearchResponse(results=results)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -70,20 +72,23 @@ def create_new_submissions(submissions: List[SubMissionCreate]):
 def read_all_submissions(skip: int = 0, limit: int = 100):
     return services.get_all_submissions(skip=skip, limit=limit)
 
-@crud_router.get("/{adsh}", response_model=SubMission)
-def read_submission(adsh: str):
-    submission = services.get_submission_by_adsh(adsh)
+# --- THESE THREE ENDPOINTS ARE NOW UPDATED ---
+
+@crud_router.get("/{id}", response_model=SubMission)
+def read_submission(id: str):
+    # The internal service function still uses `adsh`, but the API path now uses `id`.
+    submission = services.get_submission_by_adsh(adsh=id)
     if submission is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Submission not found.")
     return submission
 
-@crud_router.put("/{adsh}", response_model=SubMission)
-def update_existing_submission(adsh: str, submission_update: SubMissionUpdate):
-    return services.update_submission(adsh, submission_update)
+@crud_router.put("/{id}", response_model=SubMission)
+def update_existing_submission(id: str, submission_update: SubMissionUpdate):
+    return services.update_submission(adsh=id, submission_update=submission_update)
 
-@crud_router.delete("/{adsh}")
-def delete_existing_submission(adsh: str):
-    return services.delete_submission(adsh)
+@crud_router.delete("/{id}")
+def delete_existing_submission(id: str):
+    return services.delete_submission(adsh=id)
 
 # Include all routers in the main application
 app.include_router(main_router)
