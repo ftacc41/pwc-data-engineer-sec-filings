@@ -5,8 +5,17 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from fastapi import HTTPException, status
 import threading
-
+from sqlmodel import Session, select, func
+from data_access.models import CompanyDim, FactFinancials
+from .api_schemas import CompanyTotal
+import json
+import requests
+from .api_schemas import SearchResult
 from .api_schemas import SubMission, SubMissionCreate, SubMissionUpdate
+
+# Import our new config module
+from . import config
+
 
 # Define the path to our raw data file
 # This assumes the script is run from the project root, which Docker does.
@@ -106,3 +115,58 @@ def delete_submission(adsh: str) -> Dict[str, str]:
         df.to_csv(BRONZE_SUB_CSV_PATH, index=False)
         
     return {"message": f"Submission with adsh '{adsh}' deleted successfully."}
+
+def get_company_totals_from_db(limit: int, db: Session) -> List[CompanyTotal]:
+    """
+    Service function to perform the analytical query on the Gold Layer.
+    """
+    statement = (
+        select(
+            CompanyDim.name, 
+            func.sum(FactFinancials.value).label("total_value")
+        )
+        .join(CompanyDim, FactFinancials.company_id == CompanyDim.id)
+        .group_by(CompanyDim.name)
+        .order_by(func.sum(FactFinancials.value).desc())
+        .limit(limit)
+    )
+    
+    results = db.exec(statement).all()
+    company_totals = [CompanyTotal(company_name=name, total_value=value) for name, value in results]
+    
+    return company_totals
+
+def perform_vector_search(q: str, form_type: Optional[str], k: int) -> List[SearchResult]:
+    """
+    Service function to perform the vector search.
+    """
+    query_vector = config.EMBEDDING_MODEL.encode(q).tolist()
+    vector_as_string = json.dumps(query_vector, separators=(',', ':'))
+    
+    url = f"http://{config.TYPESENSE_HOST}:{config.TYPESENSE_PORT}/multi_search"
+    headers = { 'Content-Type': 'application/json', 'X-TYPESENSE-API-KEY': config.TYPESENSE_API_KEY }
+    search_requests = {
+        'searches': [{
+            'collection': config.COLLECTION_NAME, 'q': '*',
+            'vector_query': f"embedding:({vector_as_string}, k:{k})",
+        }]
+    }
+
+    if form_type:
+        search_requests['searches'][0]['filter_by'] = f'form:={form_type}'
+
+    response = requests.post(url, headers=headers, json=search_requests)
+    response.raise_for_status()
+    search_results = response.json()
+    
+    hits = search_results['results'][0].get('hits', [])
+    if not hits:
+        return []
+
+    results = [SearchResult(
+        id=hit['document']['id'], cik=hit['document']['cik'],
+        name=hit['document']['name'], form=hit['document']['form'],
+        score=hit.get('vector_distance', 0.0)
+    ) for hit in hits]
+    
+    return results
