@@ -1,16 +1,27 @@
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship
+from datetime import datetime
 
 # --- Dimension Models ---
 
 class CompanyDim(SQLModel, table=True):
     __tablename__ = 'companydim'
+    
+    # This is now the Surrogate Key
     id: Optional[int] = Field(default=None, primary_key=True)
+    
+    # This is now the Natural Key, which can have duplicates
     cik: str = Field(index=True)
+    
     name: str
     sic: Optional[str] = None
-    country_of_incorporation: Optional[str] = None
-    country_of_business: Optional[str] = None
+    
+    # --- NEW SCD Type 2 Columns ---
+    valid_from: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    valid_to: datetime = Field(default=datetime(9999, 12, 31), nullable=False)
+    is_current: bool = Field(default=True, nullable=False, index=True)
+
+    # We remove the country fields for simplicity as they are not in our source data
 
 class FilingDim(SQLModel, table=True):
     __tablename__ = 'filingdim'
